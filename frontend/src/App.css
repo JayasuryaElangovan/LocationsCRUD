@@ -1,0 +1,12 @@
+dialog::backdrop {
+  background-color: rgba(0, 0, 0, 0.9);
+}
+dialog {
+  width: 300px; /* Set a specific width */
+  padding: 20px;
+  border-radius: 10px;
+  border: none;
+  background-color: white;
+
+  /* Center the dialog on screen */
+}

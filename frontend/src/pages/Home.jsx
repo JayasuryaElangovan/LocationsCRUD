@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useRef, useState } from "react";
 import { queryClient } from "../index.js";
 import { FiEdit2 } from "react-icons/fi";
 import { Link, useNavigate } from "react-router-dom";
@@ -6,29 +6,41 @@ import { RiDeleteBin2Line } from "react-icons/ri";
 import { toast } from "react-toastify";
 import useTable from "./useTable.js";
 import { TableContext } from "./TableContextProvider.js";
-import ConfirmRemove from "../modal/ConfirmRemove.js";
+import ConfirmRemove from "../modal/ConfirmRemoveModal.js";
+import { FaCaretUp } from "react-icons/fa";
+import { FaCaretDown } from "react-icons/fa";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { deleteLocation, fetchLocations, fetchTotal } from "../api/api.js";
 const NewHome = () => {
-  const [searchText, setSearhText] = useState("");
   const deleteModal = useRef();
   const [deleteId, setDeleteId] = useState("");
-  const { setPageNumber, pageNumber } = useContext(TableContext);
+
+  const {
+    setPageNumber,
+    pageNumber,
+    searchText,
+    setSearhText,
+    filter,
+    setFilter,
+    order,
+    setOrder,
+  } = useContext(TableContext);
+  const [pageValue, setPageValue] = useState(pageNumber);
   const { data: totalData, isLoading: isLoadingTotal } = useQuery({
     queryKey: ["getTotal", searchText],
     queryFn: () => fetchTotal(searchText),
   });
 
   const { data: locations, isLoading: isLoadingLocations } = useQuery({
-    queryKey: ["getLocations", searchText, pageNumber],
-    queryFn: () => fetchLocations(searchText, pageNumber),
+    queryKey: ["getLocations", searchText, pageNumber, filter, order],
+    queryFn: () => fetchLocations(searchText, pageNumber, filter, order),
   });
 
   const { range } = useTable({
     len: isLoadingTotal ? 0 : totalData[0].len,
     rowsPerPage: 6,
   });
-
+  const pageRef = useRef();
   const navigate = useNavigate();
   const handleView = (locationData) => {
     navigate("/location-details", { state: { ...locationData } });
@@ -38,28 +50,17 @@ const NewHome = () => {
     const data = locations.find((loc) => loc.branch_id === branchId);
     navigate("/edit-location", { state: { ...data } });
   };
-  // const handleDelete = async (branch_id) => {
-  //   const response = await axios.delete(
-  //     `http://localhost:8000/delete-location/${branch_id}`
-  //   );
-  //   if (response.data.status === 200) {
-  //
 
-  //     const result = await axios.get(
-  //       `${process.env.REACT_APP_BACKEND_URL}/get-locations?from=${
-  //         (pageNumber - 1) * 6 + 1
-  //       }&to=${pageNumber * 6}&searchText=${searchText}`
-  //     );
-  //   } else {
-  //
-  //   }
-  // };
   const { mutate: handleDelete } = useMutation({
     mutationFn: (branch_id) => deleteLocation(branch_id),
     onSuccess: (response) => {
+      if (locations.length === 1 && pageNumber === range.length) {
+        setPageNumber(pageNumber - 1);
+        setPageValue(pageNumber - 1);
+      }
       queryClient.invalidateQueries({ queryKey: ["getTotal"] });
       queryClient.invalidateQueries({ queryKey: ["getLocations"] });
-      toast.success(response.data.message);
+      toast.success(response.data);
     },
     onError: () => {
       toast.error("Server Error");
@@ -74,16 +75,36 @@ const NewHome = () => {
     deleteModal.current.close();
   };
   const handlePrev = () => {
-    setPageNumber((prev) => prev - 1);
+    setPageNumber((prev) => +prev - 1);
+    setPageValue((prev) => +prev - 1);
   };
   const handleNext = () => {
-    setPageNumber((curr) => curr + 1);
+    setPageNumber((curr) => +curr + 1);
+    setPageValue((curr) => +curr + 1);
   };
   const handleSearch = (e) => {
     setSearhText(e.target.value);
 
     setPageNumber(range[0]);
+    setPageValue(range[0]);
   };
+  const handleBlur = (e) => {
+    const page = pageRef.current.value;
+
+    if (page < range[0] || page > range[range.length - 1]) {
+      toast.error("Invalid Page Number");
+
+      setPageValue(pageNumber);
+    } else {
+      setPageNumber(page);
+      setPageValue(page);
+    }
+  };
+  function handleClear() {
+    setSearhText("");
+    setPageNumber(range[0]);
+    setPageValue(range[0]);
+  }
   return (
     <>
       <ConfirmRemove
@@ -98,16 +119,16 @@ const NewHome = () => {
           <div className="w-[75%] relative">
             <input
               type="text"
+              onChange={handleSearch}
               placeholder="Search..."
               value={searchText}
               className="w-full border-blue-500 border-2 focus:outline-none rounded-md pl-2 py-2"
-              onChange={(e) => handleSearch(e)}
             />
             <button
               className={`text-red-500 text-xl absolute top-1 right-4 ${
                 searchText.trim().length > 0 ? "block" : "hidden"
               }`}
-              onClick={() => setSearhText("")}
+              onClick={handleClear}
             >
               x
             </button>
@@ -127,14 +148,185 @@ const NewHome = () => {
           </Link>
         </div>
 
-        <table className="w-full ">
+        <table className="w-full  ">
           <thead className="">
             <tr className=" ">
-              <th className=" bg-gray-400 py-2 px-4 ">Branch Id</th>
-              <th className="  bg-gray-400 py-2 px-4">City</th>
-              <th className="  bg-gray-400 py-2 px-4">State</th>
-              <th className="  bg-gray-400 py-2 px-4">Country</th>
-              <th className="  bg-gray-400 py-2 px-4">Country Description</th>
+              <th className=" bg-gray-400 py-2 px-4 ">
+                <p className="flex items-center space-x-2">
+                  <span>Branch Id</span>
+
+                  <span>
+                    <span
+                      className={`cursor-pointer text-sm hover:text-gray-500 ${
+                        order === "ASC" && filter === "branch_id"
+                          ? "text-zinc-500"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setOrder("ASC");
+                        setFilter("branch_id");
+                      }}
+                    >
+                      <FaCaretUp />
+                    </span>
+
+                    <span
+                      className={`cursor-pointer text-sm hover:text-gray-600 ${
+                        order === "DESC" && filter === "branch_id"
+                          ? "text-zinc-500"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setOrder("DESC");
+                        setFilter("branch_id");
+                      }}
+                    >
+                      <FaCaretDown />
+                    </span>
+                  </span>
+                </p>
+              </th>
+              <th className="  bg-gray-400 py-2 px-4">
+                <p className="flex items-center space-x-2">
+                  <span>City</span>
+
+                  <span>
+                    <span
+                      className={`cursor-pointer text-sm hover:text-gray-600 ${
+                        order === "ASC" && filter === "city"
+                          ? "text-zinc-500"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setOrder("ASC");
+                        setFilter("city");
+                      }}
+                    >
+                      <FaCaretUp />
+                    </span>
+
+                    <span
+                      className={`cursor-pointer text-sm hover:text-gray-600 ${
+                        order === "DESC" && filter === "city"
+                          ? "text-zinc-500"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setOrder("DESC");
+                        setFilter("city");
+                      }}
+                    >
+                      <FaCaretDown />
+                    </span>
+                  </span>
+                </p>
+              </th>
+              <th className="  bg-gray-400 py-2 px-4">
+                <p className="flex items-center space-x-2">
+                  <span>State</span>
+
+                  <span>
+                    <span
+                      className={`cursor-pointer text-sm hover:text-gray-600 ${
+                        order === "ASC" && filter === "state"
+                          ? "text-zinc-500"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setOrder("ASC");
+                        setFilter("state");
+                      }}
+                    >
+                      <FaCaretUp />
+                    </span>
+
+                    <span
+                      className={`cursor-pointer text-sm hover:text-gray-600 ${
+                        order === "DESC" && filter === "state"
+                          ? "text-zinc-500"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setOrder("DESC");
+                        setFilter("state");
+                      }}
+                    >
+                      <FaCaretDown />
+                    </span>
+                  </span>
+                </p>
+              </th>
+              <th className="  bg-gray-400 py-2 px-4">
+                <p className="flex items-center space-x-2">
+                  <span>Country</span>
+
+                  <span>
+                    <span
+                      className={`cursor-pointer text-sm hover:text-gray-600 ${
+                        order === "ASC" && filter === "country"
+                          ? "text-zinc-500"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setOrder("ASC");
+                        setFilter("country");
+                      }}
+                    >
+                      <FaCaretUp />
+                    </span>
+
+                    <span
+                      className={`cursor-pointer text-sm hover:text-gray-600 ${
+                        order === "DESC" && filter === "country"
+                          ? "text-zinc-500"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setOrder("DESC");
+                        setFilter("country");
+                      }}
+                    >
+                      <FaCaretDown />
+                    </span>
+                  </span>
+                </p>
+              </th>
+              <th className=" bg-gray-400 py-2 px-4 ">
+                <p className="flex items-center space-x-2">
+                  <span>Country Description</span>
+
+                  <span>
+                    <span
+                      className={`cursor-pointer text-sm hover:text-gray-600 ${
+                        order === "ASC" && filter === "country_description"
+                          ? "text-zinc-500"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setOrder("ASC");
+                        setFilter("country_description");
+                      }}
+                    >
+                      <FaCaretUp />
+                    </span>
+
+                    <span
+                      className={`cursor-pointer text-sm hover:text-gray-600 ${
+                        order === "DESC" && filter === "country_description"
+                          ? "text-zinc-500"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setOrder("DESC");
+                        setFilter("country_description");
+                      }}
+                    >
+                      <FaCaretDown />
+                    </span>
+                  </span>
+                </p>
+              </th>
+
               <th className="  bg-gray-400 py-2 px-4">Details</th>
               <th className="  bg-gray-400 py-2 px-4">Edit</th>
               <th className="  bg-gray-400 py-2 px-4">Delete</th>
@@ -185,31 +377,27 @@ const NewHome = () => {
         </table>
 
         <div className="flex justify-center w-full  items-center">
-          <div className=" flex self-stretch border items-center space-x-3">
-            <p className="font-bold">Pages: </p>
+          <div className="flex border py-1 px-1 space-x-3">
             <button
-              className={`px-2 py-1 rounded-sm bg-gray-500 ${
-                pageNumber < 2 ? "hidden" : ""
-              }`}
+              className="px-2 py-1 bg-gray-500 text-white rounded-md disabled:bg-gray-300"
               onClick={handlePrev}
+              disabled={pageNumber < 2}
             >
               Prev
             </button>
-            {range.map((page) => (
-              <button
-                key={page}
-                onClick={() => setPageNumber(page)}
-                className={`${
-                  pageNumber === page ? "underline" : ""
-                } hover:underline`}
-              >
-                {page}
-              </button>
-            ))}
+            <p className="py-1">
+              Page{" "}
+              <input
+                value={pageValue}
+                ref={pageRef}
+                onChange={(e) => setPageValue(e.target.value)}
+                onBlur={handleBlur}
+                className="w-6 border rounded-sm text-center"
+              />{" "}
+              of {`${range.length}`}
+            </p>
             <button
-              className={`px-2 py-1  rounded-sm bg-gray-500  ${
-                pageNumber === range.length ? "hidden" : ""
-              }`}
+              className="px-2 py-1 bg-gray-500 text-white rounded-md disabled:bg-gray-300"
               onClick={handleNext}
               disabled={pageNumber === range.length}
             >

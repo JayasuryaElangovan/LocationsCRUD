@@ -24,13 +24,15 @@ db.connect((err) => {
   console.log("Connected to MySQL as id " + db.threadId);
 });
 app.get("/get-locations", (req, res) => {
-  const { from, to, searchText } = req.query;
+  const { from, searchText, sortBy, order } = req.query;
   console.log(req.query);
   let sql = "";
   if (!searchText) {
-    sql = `Select * from location limit 6 offset ${from - 1}`;
+    sql = `Select * from location order by ${sortBy} ${order} limit 6 offset ${
+      from - 1
+    } `;
   } else {
-    sql = `Select * from location where country like '%${searchText}%' or country_description like '%${searchText}%' or address like '%${searchText}%' or  city like '%${searchText}%' or state like '%${searchText}%' or address2 like '%${searchText}%' or  branch_id like '%${searchText}%'  limit 6 offset ${
+    sql = `Select * from location where country like '%${searchText}%' or country_description like '%${searchText}%' or address like '%${searchText}%' or  city like '%${searchText}%' or state like '%${searchText}%' or address2 like '%${searchText}%' or  branch_id like '%${searchText}%' order by ${sortBy} ${order} limit 6 offset ${
       from - 1
     }`;
   }
@@ -72,9 +74,9 @@ app.post("/restore-all", (req, res) => {
         clearRecentlyDeletedQuery,
         (errorClearing, responseClearing) => {
           if (errorClearing) {
-            res.send({ status: 500, message: "Error Restoring" });
+            res.status(500).send("Error Restoring");
           } else {
-            res.send({ status: 200, message: "Restored All" });
+            res.status(200).send("Restored All");
           }
         }
       );
@@ -85,9 +87,9 @@ app.delete("/delete-all", (req, res) => {
   const clearDeletedQuery = "TRUNCATE TABLE recently_deleted";
   db.execute(clearDeletedQuery, (err, response) => {
     if (err) {
-      res.send({ status: 500, message: err.message });
+      res.status(500).send(err.message);
     } else {
-      res.send({ status: 200, message: "Permanently Deleted" });
+      res.status(200).send("Permanently Deleted");
     }
   });
 });
@@ -107,8 +109,7 @@ app.post("/add-location", (req, res) => {
   } = req.body;
 
   const getByBranchId = "Select * from location where branch_id = ?";
-  const checkRecentlyDeleted =
-    "SELECT * FROM recently_deleted where branch_id=?";
+
   db.execute(getByBranchId, [branch_id], (err, result) => {
     if (err) {
       res.send({ status: 500, message: "Server Error" });
@@ -130,16 +131,16 @@ app.post("/add-location", (req, res) => {
         db.execute(
           query,
           [
-            branch_id,
+            branch_id.trim(),
             85.120945,
             120.56829,
-            address,
-            address2,
-            city,
-            state,
-            country,
-            country_description,
-            zip_code,
+            address.trim(),
+            address2 ? address2.trim() : "",
+            city.trim(),
+            state.trim(),
+            country.trim(),
+            country_description.trim(),
+            zip_code.trim(),
             false,
             date_created,
             date_updated,
@@ -162,36 +163,31 @@ app.put("/update-location", (req, res) => {
   console.log("update called");
   const {
     branch_id,
-    branch_is_closed,
     address,
     address2,
     city,
     state,
     zip_code,
-    lat,
-    lon,
     country,
     country_description,
   } = req.body;
   const sql =
-    "update location set branch_is_closed=?, address=?,address2=?, city=?,state=?,zip_code=?,lat=?,lon=?,country=?, country_description=?,date_updated=? where branch_id=?";
-  const dateCls = new Date();
-  const year = dateCls.getFullYear().toString();
-  const month = (dateCls.getMonth() + 1).toString().padStart(2, "0");
-  const date = dateCls.getDate().toString().padStart(2, "0");
-  const updatedDate = `${year}-${month}-${date}`;
+    "update location set branch_is_closed=?, address=?,address2=?, city=?,state=?,zip_code=?,country=?, country_description=?,date_updated=? where branch_id=?";
+  const date = new Date();
+  const year = date.getFullYear().toString();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const datevalue = date.getDate().toString().padStart(2, "0");
+  const updatedDate = `${year}-${month}-${datevalue}`;
 
   db.execute(
     sql,
     [
-      branch_is_closed,
+      false,
       address,
-      address2,
+      address2 || "",
       city,
       state,
       zip_code,
-      lat,
-      lon,
       country,
       country_description,
       updatedDate,
@@ -210,9 +206,9 @@ app.get("/recently-deleted", (req, res) => {
   const getRecentlyDeleted = "SELECT * from recently_deleted";
   db.execute(getRecentlyDeleted, (err, results) => {
     if (err) {
-      res.send({ status: 500, message: err.message });
+      res.status(500).message(err.message);
     } else {
-      res.send({ status: 200, data: results });
+      res.status(200).send(results);
     }
   });
 });
@@ -232,46 +228,57 @@ app.post("/handle-restore", (req, res) => {
     date_created,
     date_updated,
   } = req.body;
-
-  const removeFromRecentlyDeleted =
-    "DELETE FROM recently_deleted where branch_id= ?";
-  db.execute(
-    removeFromRecentlyDeleted,
-    [branch_id],
-    (errorRemoving, removedResponse) => {
-      if (errorRemoving) {
-        res.send({ status: 500, message: errorRemoving.message });
+  const checkAlreadyExist = "SELECT * FROM location where branch_id=?";
+  db.execute(checkAlreadyExist, [branch_id], (error, responseOfChecking) => {
+    if (error) {
+      res.status(500).send("Something went wrong");
+    } else {
+      if (responseOfChecking.length > 0) {
+        res.status(500).send(`Already a branch ${branch_id} exists`);
       } else {
-        const restoreQuery =
-          "INSERT INTO location (branch_id, lat,lon,address,address2,city,state,country,country_description,zip_code,branch_is_closed,date_created,date_updated) VALUES (?, ?,?,?,?,?,?,?,?,?,?,?,?)";
+        const removeFromRecentlyDeleted =
+          "DELETE FROM recently_deleted where branch_id= ?";
         db.execute(
-          restoreQuery,
-          [
-            branch_id,
-            lat,
-            lon,
-            address,
-            address2 || null,
-            city,
-            state,
-            country,
-            country_description,
-            zip_code,
-            branch_is_closed,
-            date_created.substring(0, 10),
-            date_updated ? date_updated.substring(0, 10) : null,
-          ],
-          (errorRestoring, responseRestoring) => {
-            if (errorRestoring) {
-              res.send({ status: 500, message: errorRestoring.message });
+          removeFromRecentlyDeleted,
+          [branch_id],
+          (errorRemoving, removedResponse) => {
+            if (errorRemoving) {
+              res.send({ status: 500, message: errorRemoving.message });
             } else {
-              res.send({ status: 200, message: "Restored Successfully" });
+              const restoreQuery =
+                "INSERT INTO location (branch_id, lat,lon,address,address2,city,state,country,country_description,zip_code,branch_is_closed,date_created,date_updated) VALUES (?, ?,?,?,?,?,?,?,?,?,?,?,?)";
+              db.execute(
+                restoreQuery,
+                [
+                  branch_id,
+                  lat,
+                  lon,
+                  address,
+                  address2 || null,
+                  city,
+                  state,
+                  country,
+                  country_description,
+                  zip_code,
+                  branch_is_closed,
+                  date_created.substring(0, 10),
+                  date_updated ? date_updated.substring(0, 10) : null,
+                ],
+                (errorRestoring, responseRestoring) => {
+                  if (errorRestoring) {
+                    res.status(500).send("Something went wrong");
+                    console.log(errorRestoring.message);
+                  } else {
+                    res.status(200).send("Restored Successfully");
+                  }
+                }
+              );
             }
           }
         );
       }
     }
-  );
+  });
 });
 
 app.delete("/delete-location/:branch_id", (req, res) => {
@@ -323,9 +330,10 @@ app.delete("/delete-location/:branch_id", (req, res) => {
             ],
             (error, results) => {
               if (error) {
-                res.send({ status: 500, message: error.message });
+                res.status(500).send(error.message);
+                console.log(error.message);
               } else {
-                res.send({ status: 200, message: "Moved to recently deleted" });
+                res.status(200).send("Moved to recently deleted");
               }
             }
           );
@@ -335,14 +343,14 @@ app.delete("/delete-location/:branch_id", (req, res) => {
   });
 });
 
-app.delete("/deleteFromRecentlyDeleted/:branch_id", (req, res) => {
-  const { branch_id } = req.params;
-  const deleteQuery = "DELETE FROM recently_deleted where branch_id=?";
-  db.execute(deleteQuery, [branch_id], (err, response) => {
+app.delete("/deleteFromRecentlyDeleted/:branch_id/:id", (req, res) => {
+  const { branch_id, id } = req.params;
+  const deleteQuery = "DELETE FROM recently_deleted where branch_id=? and id=?";
+  db.execute(deleteQuery, [branch_id, id], (err, response) => {
     if (err) {
-      res.send({ status: 500, message: err.message });
+      res.status(500).send(err.message);
     } else {
-      res.send({ status: 200, message: "Completely deleted" });
+      res.status(200).send("Completely deleted");
     }
   });
 });

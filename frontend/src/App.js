@@ -1,11 +1,12 @@
 import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import AddLocation from "./pages/AddLocation";
+
 import Layout from "./Layout";
 import DetailsPage from "./pages/DetailsPage";
 import UpdateLocation from "./pages/UpateLocation";
 import Home from "./pages/Home";
 import RecentlyDeleted from "./pages/RecentlyDeleted";
+import AddLocation from "./pages/AddLocation";
 
 const App = () => {
   return (
